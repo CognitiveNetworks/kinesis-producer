@@ -23,8 +23,15 @@ var (
 	ErrRecordSizeExceeded  = errors.New("Data must be less than or equal to 1MB in size")
 )
 
+type Metrics struct {
+	Retries int
+	Sent int
+	Failures int
+}
+
 // Producer batches records.
 type Producer struct {
+	Metrics
 	sync.RWMutex
 	*Config
 	aggregator *Aggregator
@@ -250,6 +257,9 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, reason strin
 		})
 
 		if err != nil {
+			p.Lock()
+			p.Failures += len(records)
+			p.Unlock()
 			p.Logger.WithError(err).Error("flush")
 			p.RLock()
 			notify := p.notify
@@ -273,6 +283,11 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, reason strin
 				p.Logger.WithFields(fields).Infof("Result[%d]", i)
 			}
 		}
+
+		p.Lock()
+		p.Sent += len(records) - int(*out.FailedRecordCount)
+		p.Retries += int(*out.FailedRecordCount)
+		p.Unlock()
 
 		failed := *out.FailedRecordCount
 		if failed == 0 {
