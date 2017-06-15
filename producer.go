@@ -14,6 +14,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/jpillora/backoff"
+	
 )
 
 // Errors
@@ -245,6 +246,7 @@ func (p *Producer) drainIfNeed() (*kinesis.PutRecordsRequestEntry, bool) {
 func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, reason string) {
 	b := &backoff.Backoff{
 		Jitter: true,
+		Max: 1 * time.Second,
 	}
 
 	defer p.semaphore.release()
