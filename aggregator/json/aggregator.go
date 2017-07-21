@@ -12,6 +12,7 @@ type Partition struct {
 }
 
 type Aggregator struct {
+    parts map[string] *Partition
 }
 
 // Size return how many bytes stored in the aggregator.
@@ -29,8 +30,16 @@ func (a *Aggregator) Count(partitionKey string) int {
 func (a *Aggregator) Put(data []byte, partitionKey string) {
 }
 
-func (a *Aggregator) Drain(partitionKey string) (*k.PutRecordsRequestEntry, error) {
-    return nil, nil
+func (a *Aggregator) Drain(partitionKey string) (records []*k.PutRecordsRequestEntry, err error) {
+    key := "test"
+    data := []byte("{alpha}")
+    entry := &k.PutRecordsRequestEntry{
+        Data:         data,
+        PartitionKey: &key,
+    }
+    records = append(records, entry)
+    err = nil
+    return
 }
 
 func (a *Aggregator) IsAggregated(entry *k.PutRecordsRequestEntry) bool {
@@ -38,5 +47,6 @@ func (a *Aggregator) IsAggregated(entry *k.PutRecordsRequestEntry) bool {
 }
 
 func (a *Aggregator) ExtractRecords(entry *k.PutRecordsRequestEntry) (out []*k.PutRecordsRequestEntry) {
-    out := [entry]
+    out = append(out, entry)
+    return out
 }

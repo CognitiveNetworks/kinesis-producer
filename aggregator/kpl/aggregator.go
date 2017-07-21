@@ -51,7 +51,7 @@ func (a *Aggregator) Put(data []byte, partitionKey string) {
 // that compatible with the KCL's deaggregation logic.
 //
 // If you interested to know more about it. see: aggregation-format.md
-func (a *Aggregator) Drain(partitionKey string) (*k.PutRecordsRequestEntry, error) {
+func (a *Aggregator) Drain(partitionKey string) (records []*k.PutRecordsRequestEntry, err error) {
 	data, err := proto.Marshal(&AggregatedRecord{
 		PartitionKeyTable: a.pkeys,
 		Records:           a.buf,
@@ -69,7 +69,9 @@ func (a *Aggregator) Drain(partitionKey string) (*k.PutRecordsRequestEntry, erro
 		PartitionKey: &a.pkeys[0],
 	}
 	a.clear()
-	return entry, nil
+	records = append(records, entry)
+	err = nil
+	return
 }
 
 func (a *Aggregator) clear() {

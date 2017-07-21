@@ -95,12 +95,12 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		needToDrain := nbytes+p.aggregator.Size(partitionKey) > p.AggregateBatchSize || p.aggregator.Count(partitionKey) >= p.AggregateBatchCount
 		p.RUnlock()
 		var (
-			record *kinesis.PutRecordsRequestEntry
+			records []*kinesis.PutRecordsRequestEntry
 			err    error
 		)
 		p.Lock()
 		if needToDrain {
-			if record, err = p.aggregator.Drain(partitionKey); err != nil {
+			if records, err = p.aggregator.Drain(partitionKey); err != nil {
 				p.Logger.WithError(err).Error("drain aggregator")
 			}
 		}
@@ -109,8 +109,10 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		// release the lock and then pipe the record to the records channel
 		// we did it, because the "send" operation blocks when the backlog is full
 		// and this can cause deadlock(when we never release the lock)
-		if needToDrain && record != nil {
-			p.records <- record
+		if needToDrain && records != nil {
+			for _, record := range records {
+				p.records <- record
+			}
 		}
 	}
 	return nil
@@ -150,8 +152,10 @@ func (p *Producer) Stop() {
 	p.Logger.WithField("backlog", len(p.records)).Info("stopping producer")
 
 	// drain
-	if record, ok := p.drainIfNeed(); ok {
-		p.records <- record
+	if records, ok := p.drainIfNeed(); ok {
+		for _, record := range records {
+			p.records <- record
+		}
 	}
 	p.done <- struct{}{}
 	close(p.records)
@@ -212,8 +216,10 @@ func (p *Producer) loop() {
 			}
 			bufAppend(record)
 		case <-tick.C:
-			if record, ok := p.drainIfNeed(); ok {
-				bufAppend(record)
+			if records, ok := p.drainIfNeed(); ok {
+				for _, record := range records {
+					bufAppend(record)
+				}
 			}
 			// if the buffer is still containing records
 			if size > 0 {
@@ -225,18 +231,18 @@ func (p *Producer) loop() {
 	}
 }
 
-func (p *Producer) drainIfNeed() (*kinesis.PutRecordsRequestEntry, bool) {
+func (p *Producer) drainIfNeed() ([]*kinesis.PutRecordsRequestEntry, bool) {
 	p.RLock()
 	needToDrain := p.aggregator.Size("") > 0
 	p.RUnlock()
 	if needToDrain {
 		p.Lock()
-		record, err := p.aggregator.Drain("")
+		records, err := p.aggregator.Drain("")
 		p.Unlock()
 		if err != nil {
 			p.Logger.WithError(err).Error("drain aggregator")
 		} else {
-			return record, true
+			return records, true
 		}
 	}
 	return nil, false
