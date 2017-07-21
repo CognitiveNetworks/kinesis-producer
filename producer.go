@@ -14,7 +14,8 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/jpillora/backoff"
-	
+	"github.com/CognitiveNetworks/kinesis-producer/aggregator/kpl"
+
 )
 
 // Errors
@@ -35,7 +36,7 @@ type Producer struct {
 	Metrics
 	sync.RWMutex
 	*Config
-	aggregator *Aggregator
+	aggregator Aggregator
 	semaphore  semaphore
 	records    chan *kinesis.PutRecordsRequestEntry
 	failure    chan *FailureRecord
@@ -57,7 +58,7 @@ func New(config *Config) *Producer {
 		done:       make(chan struct{}),
 		records:    make(chan *kinesis.PutRecordsRequestEntry, config.BacklogCount),
 		semaphore:  make(chan struct{}, config.MaxConnections),
-		aggregator: new(Aggregator),
+		aggregator: new(kpl.Aggregator),
 	}
 }
 
@@ -91,7 +92,7 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		}
 	} else {
 		p.RLock()
-		needToDrain := nbytes+p.aggregator.Size() > p.AggregateBatchSize || p.aggregator.Count() >= p.AggregateBatchCount
+		needToDrain := nbytes+p.aggregator.Size(partitionKey) > p.AggregateBatchSize || p.aggregator.Count(partitionKey) >= p.AggregateBatchCount
 		p.RUnlock()
 		var (
 			record *kinesis.PutRecordsRequestEntry
@@ -99,7 +100,7 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		)
 		p.Lock()
 		if needToDrain {
-			if record, err = p.aggregator.Drain(); err != nil {
+			if record, err = p.aggregator.Drain(partitionKey); err != nil {
 				p.Logger.WithError(err).Error("drain aggregator")
 			}
 		}
@@ -226,11 +227,11 @@ func (p *Producer) loop() {
 
 func (p *Producer) drainIfNeed() (*kinesis.PutRecordsRequestEntry, bool) {
 	p.RLock()
-	needToDrain := p.aggregator.Size() > 0
+	needToDrain := p.aggregator.Size("") > 0
 	p.RUnlock()
 	if needToDrain {
 		p.Lock()
-		record, err := p.aggregator.Drain()
+		record, err := p.aggregator.Drain("")
 		p.Unlock()
 		if err != nil {
 			p.Logger.WithError(err).Error("drain aggregator")
@@ -315,8 +316,8 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, reason strin
 // into the failure channel
 func (p *Producer) dispatchFailures(records []*kinesis.PutRecordsRequestEntry, err error) {
 	for _, r := range records {
-		if isAggregated(r) {
-			p.dispatchFailures(extractRecords(r), err)
+		if p.aggregator.IsAggregated(r) {
+			p.dispatchFailures(p.aggregator.ExtractRecords(r), err)
 		} else {
 			p.failure <- &FailureRecord{err, r.Data, *r.PartitionKey}
 		}

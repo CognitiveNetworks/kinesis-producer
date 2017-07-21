@@ -1,11 +1,10 @@
-package producer
+package kpl
 
 import (
 	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
-	"github.com/CognitiveNetworks/kinesis-producer/aggregator/kpl"
 )
 
 func assert(t *testing.T, val bool, msg string) {
@@ -15,21 +14,21 @@ func assert(t *testing.T, val bool, msg string) {
 }
 
 func TestSizeAndCount(t *testing.T) {
-	a := new(kpl.Aggregator)
-	assert(t, a.Size("")+a.Count("") == 0, "size and count should equal to 0 at the beginning")
+	a := new(Aggregator)
+	assert(t, a.Size()+a.Count() == 0, "size and count should equal to 0 at the beginning")
 	data := []byte("hello")
 	pkey := "world"
 	n := rand.Intn(100)
 	for i := 0; i < n; i++ {
 		a.Put(data, pkey)
 	}
-	assert(t, a.Size("") == 5*n+5, "size should equal to the data and the partition-key")
-	assert(t, a.Count("") == n, "count should be equal to the number of Put calls")
+	assert(t, a.Size() == 5*n+5, "size should equal to the data and the partition-key")
+	assert(t, a.Count() == n, "count should be equal to the number of Put calls")
 }
 
 func TestAggregation(t *testing.T) {
 	var wg sync.WaitGroup
-	a := new(kpl.Aggregator)
+	a := new(Aggregator)
 	n := 50
 	wg.Add(n)
 	for i := 0; i < n; i++ {
@@ -39,12 +38,12 @@ func TestAggregation(t *testing.T) {
 		wg.Done()
 	}
 	wg.Wait()
-	record, err := a.Drain("")
+	record, err := a.Drain()
 	if err != nil {
 		t.Error(err)
 	}
-	assert(t, a.IsAggregated(record), "should return an agregated record")
-	records := a.ExtractRecords(record)
+	assert(t, isAggregated(record), "should return an agregated record")
+	records := extractRecords(record)
 	for i := 0; i < n; i++ {
 		c := strconv.Itoa(i)
 		found := false
