@@ -14,7 +14,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/jpillora/backoff"
-	"github.com/CognitiveNetworks/kinesis-producer/aggregator/kpl"
+
 
 )
 
@@ -58,7 +58,7 @@ func New(config *Config) *Producer {
 		done:       make(chan struct{}),
 		records:    make(chan *kinesis.PutRecordsRequestEntry, config.BacklogCount),
 		semaphore:  make(chan struct{}, config.MaxConnections),
-		aggregator: new(kpl.Aggregator),
+		aggregator: config.Aggregator,
 	}
 }
 
@@ -321,8 +321,11 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, reason strin
 // dispatchFailures gets batch of records, extract them, and push them
 // into the failure channel
 func (p *Producer) dispatchFailures(records []*kinesis.PutRecordsRequestEntry, err error) {
+
 	for _, r := range records {
+		// p.Logger.Infof("dispatchFailures %v", r)
 		if p.aggregator.IsAggregated(r) {
+			// p.Logger.Infof("Aggregated dispatch")
 			p.dispatchFailures(p.aggregator.ExtractRecords(r), err)
 		} else {
 			p.failure <- &FailureRecord{err, r.Data, *r.PartitionKey}

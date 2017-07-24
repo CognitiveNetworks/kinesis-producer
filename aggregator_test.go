@@ -7,7 +7,7 @@ import (
 	"testing"
 	"github.com/CognitiveNetworks/kinesis-producer/aggregator/kpl"
 	"github.com/CognitiveNetworks/kinesis-producer/aggregator/json"
-	"log"
+	// "log"
 )
 
 func assert(t *testing.T, val bool, msg string) {
@@ -60,6 +60,8 @@ func TestKPLAggregation(t *testing.T) {
 			assert(t, found, "record not found after extracting: "+c)
 		}
 	}
+	assert(t, a.Size("") == 0, "size should equal to 0 after Drain")
+	assert(t, a.Count("") == 0, "count should be equal to 0 after Drain")
 }
 
 func TestJSONSizeAndCount(t *testing.T) {
@@ -82,18 +84,30 @@ func TestJSONAggregation(t *testing.T) {
 	var wg sync.WaitGroup
 	a := new(json.Aggregator)
 	n := 50
+	bytes := 0
 	wg.Add(n)
 	for i := 0; i < n; i++ {
 		c := strconv.Itoa(i)
-		data := []byte("hello-" + c)
-		a.Put(data, c)
+		for j := 0; j < 10; j++ {
+			data := []byte("{hello:'" + c + "'}")
+			bytes += len(data)
+			a.Put(data, c)
+		}
+		bytes += len(c)
 		wg.Done()
 	}
 	wg.Wait()
-	record, err := a.Drain("")
+
+	assert(t, a.Size("") == bytes, "aggregator size should equal nBytes before Drain")
+	assert(t, a.Count("") == n*10, "aggregator count should be equal to n before Drain")
+
+	records, err := a.Drain("")
 	if err != nil {
 		t.Error(err)
 	}
 
-	log.Printf("records is %v", record)
+	assert(t, len(records) == n, "aggregator should have returned 20 records")
+	assert(t, a.Size("") == 0, "aggregator size should equal to 0 after Drain")
+	assert(t, a.Count("") == 0, "aggregator count should be equal to 0 after Drain")
+
 }
