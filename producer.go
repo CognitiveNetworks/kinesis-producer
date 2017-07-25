@@ -40,7 +40,7 @@ type Producer struct {
 	semaphore  semaphore
 	records    chan *kinesis.PutRecordsRequestEntry
 	failure    chan *FailureRecord
-	done       chan struct{}
+	Done       chan struct{}
 
 	// Current state of the Producer
 	// notify set to true after calling to `NotifyFailures`
@@ -55,7 +55,7 @@ func New(config *Config) *Producer {
 	config.defaults()
 	return &Producer{
 		Config:     config,
-		done:       make(chan struct{}),
+		Done:       make(chan struct{}),
 		records:    make(chan *kinesis.PutRecordsRequestEntry, config.BacklogCount),
 		semaphore:  make(chan struct{}, config.MaxConnections),
 		aggregator: config.Aggregator,
@@ -157,11 +157,11 @@ func (p *Producer) Stop() {
 			p.records <- record
 		}
 	}
-	p.done <- struct{}{}
+	p.Done <- struct{}{}
 	close(p.records)
 
 	// wait
-	<-p.done
+	<-p.Done
 	p.semaphore.wait()
 
 	// close the failures channel if we notify
@@ -202,7 +202,7 @@ func (p *Producer) loop() {
 	}
 
 	defer tick.Stop()
-	defer close(p.done)
+	defer close(p.Done)
 
 	for {
 		select {
@@ -225,7 +225,7 @@ func (p *Producer) loop() {
 			if size > 0 {
 				flush("interval")
 			}
-		case <-p.done:
+		case <-p.Done:
 			drain = true
 		}
 	}
