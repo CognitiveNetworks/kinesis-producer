@@ -14,7 +14,8 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/jpillora/backoff"
-	
+
+
 )
 
 // Errors
@@ -35,11 +36,11 @@ type Producer struct {
 	Metrics
 	sync.RWMutex
 	*Config
-	aggregator *Aggregator
+	aggregator Aggregator
 	semaphore  semaphore
 	records    chan *kinesis.PutRecordsRequestEntry
 	failure    chan *FailureRecord
-	done       chan struct{}
+	Done       chan struct{}
 
 	// Current state of the Producer
 	// notify set to true after calling to `NotifyFailures`
@@ -54,10 +55,10 @@ func New(config *Config) *Producer {
 	config.defaults()
 	return &Producer{
 		Config:     config,
-		done:       make(chan struct{}),
+		Done:       make(chan struct{}),
 		records:    make(chan *kinesis.PutRecordsRequestEntry, config.BacklogCount),
 		semaphore:  make(chan struct{}, config.MaxConnections),
-		aggregator: new(Aggregator),
+		aggregator: config.Aggregator,
 	}
 }
 
@@ -91,15 +92,15 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		}
 	} else {
 		p.RLock()
-		needToDrain := nbytes+p.aggregator.Size() > p.AggregateBatchSize || p.aggregator.Count() >= p.AggregateBatchCount
+		needToDrain := nbytes+p.aggregator.Size(partitionKey) > p.AggregateBatchSize || p.aggregator.Count(partitionKey) >= p.AggregateBatchCount
 		p.RUnlock()
 		var (
-			record *kinesis.PutRecordsRequestEntry
+			records []*kinesis.PutRecordsRequestEntry
 			err    error
 		)
 		p.Lock()
 		if needToDrain {
-			if record, err = p.aggregator.Drain(); err != nil {
+			if records, err = p.aggregator.Drain(partitionKey); err != nil {
 				p.Logger.WithError(err).Error("drain aggregator")
 			}
 		}
@@ -108,8 +109,10 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		// release the lock and then pipe the record to the records channel
 		// we did it, because the "send" operation blocks when the backlog is full
 		// and this can cause deadlock(when we never release the lock)
-		if needToDrain && record != nil {
-			p.records <- record
+		if needToDrain && records != nil {
+			for _, record := range records {
+				p.records <- record
+			}
 		}
 	}
 	return nil
@@ -149,14 +152,16 @@ func (p *Producer) Stop() {
 	p.Logger.WithField("backlog", len(p.records)).Info("stopping producer")
 
 	// drain
-	if record, ok := p.drainIfNeed(); ok {
-		p.records <- record
+	if records, ok := p.drainIfNeed(); ok {
+		for _, record := range records {
+			p.records <- record
+		}
 	}
-	p.done <- struct{}{}
+	p.Done <- struct{}{}
 	close(p.records)
 
 	// wait
-	<-p.done
+	<-p.Done
 	p.semaphore.wait()
 
 	// close the failures channel if we notify
@@ -197,7 +202,7 @@ func (p *Producer) loop() {
 	}
 
 	defer tick.Stop()
-	defer close(p.done)
+	defer close(p.Done)
 
 	for {
 		select {
@@ -211,31 +216,33 @@ func (p *Producer) loop() {
 			}
 			bufAppend(record)
 		case <-tick.C:
-			if record, ok := p.drainIfNeed(); ok {
-				bufAppend(record)
+			if records, ok := p.drainIfNeed(); ok {
+				for _, record := range records {
+					bufAppend(record)
+				}
 			}
 			// if the buffer is still containing records
 			if size > 0 {
 				flush("interval")
 			}
-		case <-p.done:
+		case <-p.Done:
 			drain = true
 		}
 	}
 }
 
-func (p *Producer) drainIfNeed() (*kinesis.PutRecordsRequestEntry, bool) {
+func (p *Producer) drainIfNeed() ([]*kinesis.PutRecordsRequestEntry, bool) {
 	p.RLock()
-	needToDrain := p.aggregator.Size() > 0
+	needToDrain := p.aggregator.Size("") > 0
 	p.RUnlock()
 	if needToDrain {
 		p.Lock()
-		record, err := p.aggregator.Drain()
+		records, err := p.aggregator.Drain("")
 		p.Unlock()
 		if err != nil {
 			p.Logger.WithError(err).Error("drain aggregator")
 		} else {
-			return record, true
+			return records, true
 		}
 	}
 	return nil, false
@@ -314,9 +321,12 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, reason strin
 // dispatchFailures gets batch of records, extract them, and push them
 // into the failure channel
 func (p *Producer) dispatchFailures(records []*kinesis.PutRecordsRequestEntry, err error) {
+
 	for _, r := range records {
-		if isAggregated(r) {
-			p.dispatchFailures(extractRecords(r), err)
+		// p.Logger.Infof("dispatchFailures %v", r)
+		if p.aggregator.IsAggregated(r) {
+			// p.Logger.Infof("Aggregated dispatch")
+			p.dispatchFailures(p.aggregator.ExtractRecords(r), err)
 		} else {
 			p.failure <- &FailureRecord{err, r.Data, *r.PartitionKey}
 		}

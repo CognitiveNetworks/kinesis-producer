@@ -5,6 +5,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	k "github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/CognitiveNetworks/kinesis-producer/aggregator/kpl"
 )
 
 // Constants and default configuration take from:
@@ -62,6 +63,8 @@ type Config struct {
 
 	// Client is the Putter interface implementation.
 	Client Putter
+
+	Aggregator Aggregator
 }
 
 // defaults for configuration
@@ -96,6 +99,9 @@ func (c *Config) defaults() {
 		c.FlushInterval = time.Second * 5
 	}
 	falseOrPanic(len(c.StreamName) == 0, "kinesis: StreamName length must be at least 1")
+	if c.Aggregator == nil {
+		c.Aggregator = new(kpl.Aggregator)
+	}
 }
 
 func falseOrPanic(p bool, msg string) {
