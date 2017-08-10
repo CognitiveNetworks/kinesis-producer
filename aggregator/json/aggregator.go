@@ -130,20 +130,26 @@ func (a *Aggregator) Drain(partitionKey string) (records []*k.PutRecordsRequestE
 
     if partitionKey == "" {
         for key, part := range a.parts {
-            entry := &k.PutRecordsRequestEntry{
-                Data:         part.data,
-                PartitionKey: &key,
+
+            if part.data != nil {
+
+                entry := &k.PutRecordsRequestEntry{
+                    Data:         part.data,
+                    PartitionKey: &key,
+                }
+                // log.Printf("entry data is %s", string(entry.Data[:]))
+                records = append(records, entry)
+                part.data = nil
+                part.nRecords = 0
+                part.nBytes = 0
+                // log.Printf("Drain `%s` data %s", partitionKey, entry.Data)
+
             }
-            // log.Printf("entry data is %s", string(entry.Data[:]))
-            records = append(records, entry)
-            part.data = nil
-            part.nRecords = 0
-            part.nBytes = 0
         }
 
     } else {
         part, ok := a.parts[partitionKey]
-        if ok {
+        if ok && part.data != nil {
             key := part.partitionKey
             entry := &k.PutRecordsRequestEntry{
                 Data:         part.data,
@@ -153,8 +159,12 @@ func (a *Aggregator) Drain(partitionKey string) (records []*k.PutRecordsRequestE
             part.data = nil
             part.nRecords = 0
             part.nBytes = 0
+
+            // log.Printf("Drain `%s` data %s", partitionKey, entry.Data)
         }
     }
+
+
 
     return
 }
