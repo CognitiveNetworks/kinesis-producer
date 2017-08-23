@@ -260,6 +260,9 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, reason strin
 
 	for {
 		p.Logger.WithField("reason", reason).Infof("flush %v records", len(records))
+		if p.Verbose {
+			p.Logger.Infof("PutRecords %v", records)
+		}
 		out, err := p.Client.PutRecords(&kinesis.PutRecordsInput{
 			StreamName: &p.StreamName,
 			Records:    records,
