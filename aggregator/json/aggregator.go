@@ -114,9 +114,6 @@ func (a *Aggregator) Put(data []byte, partitionKey string) {
             part.nBytes += len(data)
         }
     }
-
-
-
 }
 
 func (a *Aggregator) Drain(partitionKey string) (records []*k.PutRecordsRequestEntry, err error) {
