@@ -115,6 +115,8 @@ func (a *Aggregator) Put(data []byte, partitionKey string) {
         }
     }
 
+
+
 }
 
 func (a *Aggregator) Drain(partitionKey string) (records []*k.PutRecordsRequestEntry, err error) {
@@ -135,14 +137,14 @@ func (a *Aggregator) Drain(partitionKey string) (records []*k.PutRecordsRequestE
 
                 entry := &k.PutRecordsRequestEntry{
                     Data:         part.data,
-                    PartitionKey: &key,
+                    PartitionKey: &part.partitionKey,
                 }
                 // log.Printf("entry data is %s", string(entry.Data[:]))
                 records = append(records, entry)
                 part.data = nil
                 part.nRecords = 0
                 part.nBytes = 0
-                // log.Printf("Drain `%s` data %s", partitionKey, entry.Data)
+                // log.Printf("Drain `%s` key %s data %s", partitionKey, key, entry.Data)
 
             }
         }
@@ -160,7 +162,7 @@ func (a *Aggregator) Drain(partitionKey string) (records []*k.PutRecordsRequestE
             part.nRecords = 0
             part.nBytes = 0
 
-            // log.Printf("Drain `%s` data %s", partitionKey, entry.Data)
+            // log.Printf("Drain `%s` key %s data %s", partitionKey, key, entry.Data)
         }
     }
 
