@@ -128,7 +128,7 @@ func (a *Aggregator) Drain(partitionKey string) (records []*k.PutRecordsRequestE
     }
 
     if partitionKey == "" {
-        for key, part := range a.parts {
+        for _, part := range a.parts {
 
             if part.data != nil {
 
